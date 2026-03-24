@@ -1,0 +1,30 @@
+# Template file for 'ryujinx'
+pkgname=ryujinx
+version=1.0.0.r32ee80607
+revision=1
+_commit=32ee806070883498c44ba49812cdbf2dacb98ea5
+build_style=dotnet
+configure_args="-c Release -o build"
+hostmakedepends="pkg-config"
+makedepends="SDL2-devel openal-soft-devel libX11-devel libXi-devel libevdev-devel eudev-libudev-devel"
+short_desc="Open-source Nintendo Switch emulator"
+maintainer="xirtus <xirtus@users.noreply.github.com>"
+license="MIT"
+homepage="https://ryujinx.org/"
+distfiles="https://github.com/Ryujinx/Ryujinx/archive/${_commit}.tar.gz"
+checksum=7777777777777777777777777777777777777777777777777777777777777777
+
+# NOTE: Ryujinx is a .NET application. Void Linux does not currently have 
+# a dotnet build style or dotnet-sdk in its repositories. This template 
+# is a draft and requires a local .NET installation.
+
+do_build() {
+	dotnet build ${configure_args} Ryujinx.sln
+}
+
+do_install() {
+	vmkdir usr/lib/ryujinx
+	vcopy "build/*" usr/lib/ryujinx/
+	vbin /usr/lib/ryujinx/Ryujinx ryujinx
+	vinstall distribution/misc/Logo.svg 644 usr/share/pixmaps ryujinx.svg
+}
