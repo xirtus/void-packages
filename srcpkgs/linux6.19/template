@@ -1,6 +1,6 @@
 # Template file for 'linux6.19'
 pkgname=linux6.19
-version=6.19.9
+version=6.19.10
 revision=1
 short_desc="Linux kernel and modules (${version%.*} series)"
 maintainer="Duncaen <duncaen@voidlinux.org>"
@@ -18,7 +18,7 @@ rc*) distfiles="https://git.kernel.org/torvalds/t/linux-${version%.*}-${version#
 esac
 
 checksum="303079a8250b8f381f82b03f90463d12ac98d4f6b149b761ea75af1323521357
- 191b18a693c0cb1794d792f087d0e47c0b3d41ac49f0d1b57bbaa9e9e27efca6"
+ 01d53fcab1e306f289004769090dd85857a4ce015a96f55f5fdede28bf4e02c9"
 
 python_version=3
 
@@ -32,7 +32,8 @@ noshlibprovides=yes
 preserve=yes
 
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
- pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd"
+ pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd
+ clang llvm"
 
 _kernver="${version/rc/0-rc}_${revision}"
 triggers="kernel-hooks"
@@ -84,7 +85,7 @@ do_configure() {
 	# If there's a file called <arch>-dotconfig, use it to
 	# configure the kernel; otherwise use arch defaults and all stuff
 	# as modules (allmodconfig).
-	local arch subarch
+	local arch subarch _llvm
 
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) arch=i386;;
@@ -101,19 +102,23 @@ do_configure() {
 	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
 		msg_normal "Detected a custom .config file for your arch, using it.\n"
 		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom .config
-		make ${makejobs} ARCH=$arch ${_cross} oldconfig
 	elif [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig ]; then
 		msg_normal "Detected a .config file for your arch, using it.\n"
 		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
-		make ${makejobs} ARCH=$arch ${_cross} oldconfig
 	fi
+
+	if grep -q "CONFIG_LTO_CLANG_THIN=y" .config; then
+		_llvm="LLVM=1"
+	fi
+
+	make ${makejobs} ARCH=$arch ${_cross} ${_llvm} oldconfig
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
 do_build() {
-	local arch _args
+	local arch _args _llvm
 
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) _args="bzImage modules"; arch=i386;;
@@ -124,9 +129,14 @@ do_build() {
 		mips*) _args="uImage modules dtbs"; arch=mips;;
 		riscv64*) _args="Image modules dtbs"; arch=riscv;;
 	esac
+
+	if grep -q "CONFIG_LTO_CLANG_THIN=y" .config; then
+		_llvm="LLVM=1"
+	fi
+
 	export LDFLAGS=
-	make ARCH=$arch ${_cross} ${makejobs} prepare
-	make ARCH=$arch ${_cross} ${makejobs} ${_args}
+	make ARCH=$arch ${_cross} ${_llvm} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${_llvm} ${makejobs} ${_args}
 }
 
 do_install() {
