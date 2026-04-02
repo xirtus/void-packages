@@ -1,0 +1,26 @@
+# Template file for 'hyprcursor'
+pkgname=hyprcursor
+version=0.1.12
+revision=1
+build_style=cmake
+hostmakedepends="
+	cairo-devel
+	pkgconf
+"
+makedepends="
+	hyprlang
+	librsvg-devel
+	libzip-devel
+	tomlplusplus
+"
+short_desc="Hyprland cursor format, library and utilities"
+maintainer="xirtus <xirtus@users.noreply.github.com>"
+license="BSD-3-Clause"
+homepage="https://github.com/hyprwm/hyprcursor"
+distfiles="https://github.com/hyprwm/hyprcursor/archive/refs/tags/v${version}.tar.gz"
+checksum=3200a7a31e28884b9d046f8ec7b0aa67ede9ce0ab0d20193c2b61ee522d6b1f2
+configure_args=" --no-warn-unused-cli  -DCMAKE_BUILD_TYPE:STRING=Release  -DCMAKE_INSTALL_PREFIX:PATH=/usr "
+
+post_install() {
+	vlicense LICENSE
+}
