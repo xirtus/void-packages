@@ -1,0 +1,98 @@
+# Template file for 'hyprland'
+pkgname=hyprland
+version=0.54.3
+revision=1
+build_style=cmake
+configure_args="--no-warn-unused-cli -DCMAKE_BUILD_TYPE=Release
+ -DNO_SYSTEMD=ON -DNO_HYPRPM=ON -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+hostmakedepends="cmake cpio gcc glslang hyprwayland-scanner jq make meson ninja pkgconf wayland-devel hyprwire"
+makedepends="aquamarine cairo-devel glaze hwids hyprcursor hyprgraphics hyprlang
+ hyprutils libdisplay-info-devel libdrm-devel libgbm-devel libglvnd-devel
+ libinput-devel libliftoff-devel libseat-devel libxcb-devel libXcursor-devel
+ libxkbcommon-devel muparser-devel pango-devel re2-devel tomlplusplus-devel
+ wayland-devel wayland-protocols xcb-util-errors-devel xcb-util-renderutil-devel
+ xcb-util-wm-devel xorg-server-xwayland hyprwire"
+short_desc="Dynamic tiling Wayland compositor that doesn't sacrifice on its looks"
+maintainer="xirtus <xirtus@users.noreply.github.com>"
+license="BSD-3-Clause"
+homepage="https://hyprland.org/"
+changelog="https://github.com/hyprwm/Hyprland/releases"
+distfiles="https://github.com/hyprwm/Hyprland/releases/download/v${version}/source-v${version}.tar.gz"
+checksum=3c20a191a6f23af75f9a8db636d690c6adc95931447f9d69fb20884ec04c63ee
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	configure_args+=" -DCMAKE_CXX_FLAGS=\"-lexecinfo\""
+	makedepends+=" libexecinfo-devel"
+fi
+
+post_patch() {
+	# 1. Strip Clang-only flags that GCC 14 chokes on
+	vsed -i 's/-Wno-gnu-zero-variadic-macro-arguments//g' CMakeLists.txt
+
+	# 2. Force CMake to use system glaze instead of downloading it
+	vsed -i 's/FetchContent_MakeAvailable(glaze)/# skipped glaze fetch/g' hyprpm/CMakeLists.txt
+
+	# 3. Replace #embed with a C array (GCC 14 doesn't support #embed yet)
+	local hex_content=$(od -v -t x1 -An example/hyprland.conf | tr -d '\n' | sed 's/ /0x/g; s/0x/, 0x/g; s/^, //')
+	vsed -i "s|#embed \"../../example/hyprland.conf\"|${hex_content}|" src/config/defaultConfig.hpp
+
+	# 4. Silence warn_unused_result in start/src/core/Instance.cpp and others
+	vsed -i 's/write(m_wakeupWrite.get(), "vax", 3);/(void)!write(m_wakeupWrite.get(), "vax", 3);/g' start/src/core/Instance.cpp
+	vsed -i 's/read(fd.get(), buf.data(), 1023);/(void)!read(fd.get(), buf.data(), 1023);/g' start/src/core/Instance.cpp
+	vsed -i 's/pipe(pipefds);/(void)!pipe(pipefds);/g' start/src/core/Instance.cpp
+	vsed -i 's/write(STDERR_FILENO, err, strlen(err));/(void)!write(STDERR_FILENO, err, strlen(err));/g' src/debug/crash/CrashReporter.cpp
+	vsed -i 's/write(2, msg, strlen(msg));/(void)!write(2, msg, strlen(msg));/g' src/Compositor.cpp
+	vsed -i 's/write(m_watchdogWriteFd.get(), "end", 3);/(void)!write(m_watchdogWriteFd.get(), "end", 3);/g' src/Compositor.cpp
+	vsed -i 's/write(m_watchdogWriteFd.get(), "vax", 3);/(void)!write(m_watchdogWriteFd.get(), "vax", 3);/g' src/Compositor.cpp
+	vsed -i 's/write(m_writeFd.get(), amogus, 1);/(void)!write(m_writeFd.get(), amogus, 1);/g' src/helpers/MainLoopExecutor.cpp
+
+	# 5. Fix hyprctl string concatenation with string_view
+	vsed -i 's/socketPath = getRuntimeDir() + "\/" + instanceSignature + "\/" + filename;/socketPath = getRuntimeDir() + "\/" + instanceSignature + "\/" + std::string(filename);/g' hyprctl/src/main.cpp
+
+	# 6. Fix ternary operator type mismatch in XWM.hpp (GCC 14 compatibility)
+	vsed -i 's/return m_connection ? \*m_connection : nullptr;/if (m_connection) { return \*m_connection; } return nullptr;/g' src/xwayland/XWM.hpp
+
+	# 7. Replace C++23 append_range/insert_range with standard insert (GCC 14 compatibility)
+	find src -type f \( -name "*.cpp" -o -name "*.hpp" \) -exec sed -i 's/\([a-zA-Z0-9_.]*\)\.append_range(\(.*\));/{ auto __val = \2; \1.insert(\1.end(), __val.begin(), __val.end()); }/g' {} +
+	find src -type f \( -name "*.cpp" -o -name "*.hpp" \) -exec sed -i 's/\([a-zA-Z0-9_.]*\)\.insert_range(\([^,]*\), \(.*\));/{ auto __val = \3; \1.insert(\2, __val.begin(), __val.end()); }/g' {} +
+	}
+pre_build() {
+	# Fix glaze 4.4 compatibility issue: Nix.cpp expects glz::generic which is missing
+	# Also implement missing symbols due to nuke
+	cat << 'EOF' > ${wrksrc}/start/src/helpers/Nix.cpp
+#include "Nix.hpp"
+#include <string>
+#include <expected>
+
+std::expected<void, std::string> Nix::nixEnvironmentOk() {
+	  return {};
+}
+
+bool Nix::shouldUseNixGL() {
+	  // Hardcoded to false for Void Linux
+	  return false;
+}
+EOF
+}
+
+post_install() {
+	vlicense LICENSE
+
+	# Install headers manually for development support
+	vmkdir usr/include/hyprland/protocols
+	find src -type f \( -name '*.hpp' -o -name '*.h' -o -name '*.inc' \) -print0 | \
+		cpio --quiet -0dump ${DESTDIR}/usr/include/hyprland
+	install -Dm0644 protocols/*.h* ${DESTDIR}/usr/include/hyprland/protocols
+
+	# Install generated pkgconfig file
+	vinstall build/hyprland.pc 644 usr/share/pkgconfig
+}
+
+hyprland-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision} wayland-devel hyprwire"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/share/pkgconfig
+	}
+}
