@@ -6,11 +6,15 @@ build_style=cmake
 hostmakedepends="pkg-config"
 makedepends="pugixml-devel"
 short_desc="Hyprland implementation of wayland-scanner, in and for C++"
-maintainer="ii8 <murray.calavera@protonmail.com>"
+maintainer="xirtus <xirtus@users.noreply.github.com>"
 license="BSD-3-Clause"
 homepage="https://github.com/hyprwm/hyprwayland-scanner"
 distfiles="https://github.com/hyprwm/hyprwayland-scanner/archive/refs/tags/v${version}.tar.gz"
 checksum=2125d279eea106e3e6c8dc9fa15181c75d67467b5352d24e2a07903b10abad62
+
+post_patch() {
+	vsed -i 's/SOURCE += \"};\012\";/SOURCE += \"    nullptr,\012};\012\";/' src/main.cpp
+}
 
 post_install() {
 	vlicense LICENSE
